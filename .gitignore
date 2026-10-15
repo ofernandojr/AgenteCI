@@ -1,0 +1,13 @@
+# Dados pessoais — nunca versionar
+ci/config.json
+ci/pessoal/
+ci-config.json
+
+# Saídas do agente (por nome de arquivo: no Windows a pasta "CI/" bateria com a skill "ci/")
+CI_*.docx
+entrada_*.json
+Folha_Ponto_*.json
+dist/
+
+__pycache__/
+*.pyc

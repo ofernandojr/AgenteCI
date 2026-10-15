@@ -1,0 +1,17 @@
+{
+  "_comentario": "Copie para config.json (nesta pasta) ou ci-config.json (na pasta onde você trabalha) e preencha. NÃO suba o config.json para o GitHub.",
+  "funcionario": {
+    "nome": "Seu Nome Completo",
+    "funcao": "Sua Função",
+    "setor": "Seu Setor",
+    "empresa": "00",
+    "unidadeNum": "00",
+    "numero": "000000",
+    "unidade": "Nome da Unidade",
+    "cartao": "000"
+  },
+  "jornada": { "segqui": 9, "sex": 8, "sab": 0, "dom": 0, "tol": 10 },
+  "cidade": "São Paulo",
+  "modeloDocx": null,
+  "app": null
+}
