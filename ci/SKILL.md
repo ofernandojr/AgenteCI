@@ -5,87 +5,60 @@ description: Agente mensal da C.I. (Comunicação Interna ao Departamento de Pes
 
 # Agente da C.I. mensal
 
-Objetivo: o usuário só manda a foto do cartão. Você lê, calcula, **pergunta o que só ele sabe** e entrega a C.I. pronta em .docx.
+O usuário só manda a foto do cartão. Você lê, roda o script, **pergunta o que só ele sabe** e entrega o .docx. Seja rápido: **no máximo 2 rodadas com o usuário** (perguntas e aprovação do texto).
 
-## Peças (nesta pasta)
-- `scripts/ci.py`: motor + gerador do .docx, só Python 3 padrão. **Nunca faça as contas de cabeça: use sempre o script.**
-  - `python scripts/ci.py config`: mostra qual config/modelo foi achado.
-  - `python scripts/ci.py analisar <entrada.json>`: divergências, sábados e avisos.
-  - `python scripts/ci.py gerar <entrada.json> --saida <pasta>`: texto da C.I. + `CI_AAAA-MM.docx`.
-- `assets/modelo-ci.docx`: modelo da C.I. com marcadores ({{NOME}} etc.) preenchidos pelo config.
-- `config.exemplo.json`: formato do config.
+`scripts/ci.py` (nesta pasta da skill) faz todas as contas. **Nunca calcule horas de cabeça e não abra o código do script: só rode.** Chame pelo caminho completo da pasta da skill; no Windows use `python`, no Mac/Linux `python3`.
+- `analisar <entrada.json>`: relatório com leitura, sábados, divergências e avisos.
+- `gerar <entrada.json> [--saida PASTA]`: texto da C.I. + `CI_AAAA-MM.docx` (e o JSON do app, se o config tiver `app`).
 
-Use o caminho completo desta pasta da skill ao chamar o script (ex.: `python /caminho/da/skill/scripts/ci.py ...`). No Windows o comando costuma ser `python`; no Mac/Linux, `python3`.
+Onde gravar: no computador (Claude Code, Antigravity) use `CI/` na pasta atual; no claude.ai use `--saida /mnt/user-data/outputs`; no ChatGPT use `--saida /mnt/data`.
 
-## Onde salvar arquivos (depende de onde você está rodando)
-- **Claude Code / Antigravity (no computador):** trabalhe na pasta atual; entrada em `CI/entrada_AAAA-MM.json`, saída em `CI/` (padrão do `gerar`).
-- **claude.ai / Claude Desktop (sandbox):** grave em `/mnt/user-data/outputs/` (`--saida /mnt/user-data/outputs`) e entregue o link do .docx.
-- **ChatGPT:** grave em `/mnt/data/` (`--saida /mnt/data`) e entregue o link de download.
+## Fluxo rápido (siga nesta ordem)
 
-## 0. Config (primeira vez)
-Rode `scripts/ci.py config`. Se `config` vier `null`, peça ao usuário: nome, função, setor, empresa, unidade (nº), número (funcional), unidade (nome), cartão nº, cidade, e se a jornada é a padrão (seg–qui 9h, sex 8h, tolerância 10 min). Grave `ci-config.json` na pasta de trabalho no formato de `config.exemplo.json` e avise que, para não perguntar de novo, ele deve salvar esse arquivo como `config.json` dentro da pasta da skill.
-- `modeloDocx`: caminho de um .docx próprio (relativo à pasta do config). Use quando o usuário tiver o modelo com carimbo/assinatura. Sem ele, usa `assets/modelo-ci.docx`.
+**1. Ler as fotos UMA vez.** Se vierem como arquivo, abra as duas na mesma chamada (em paralelo). **Não amplie, recorte, gire nem processe imagem com script.** Carimbo ilegível: escreva o melhor palpite e ponha `⚠` na nota do dia; o usuário confirma depois. Não escreva tabela da leitura na conversa.
 
-## Regras de negócio
-- Período de apuração **16 → 15**. Competência = mês do dia 15. Foto "2.ª quinzena" = dias 16–31 do mês anterior; "1.ª quinzena" = dias 1–15 da competência.
-- Jornada esperada: seg–qui 9h, sex 8h, sáb/dom 0h, feriado 0h. Tolerância de 10 min (±) não é divergência.
-- Sábado de folga (sem marcação, não feriado) = "Sábado dd/mm/aaaa compensado;". Na semana de sábado compensado, hora a mais de seg–sex vira **compensado** (não sai na C.I.).
-- Almoço não batido (só entrada da manhã e saída da tarde) deduz 1h e gera "Considerar hora de almoço ...".
-- Turno que passa da meia-noite gera "Considerar saída extra do dia X às HH:MM da manhã do dia Y;".
-
-## 1. Fotos e competência
-- Precisa das duas quinzenas; se faltar uma, peça.
-- Descubra mês/ano pelos carimbos **DOMINGO**: ache o mês em que aqueles dias caem num domingo (2.ª quinzena = mês anterior à competência). Se o usuário disse o mês, use o dele.
-
-## 2. Ler o cartão
-Para cada dia, 6 colunas: Manhã entrada/saída (`inicio1`/`fim1`), Tarde entrada/saída (`inicio2`/`fim2`), Extra entrada/saída (`inicio3`/`fim3`).
-- Carimbo do relógio: os dígitos pequenos/girados antes da hora são o **dia**; ignore, pegue só `HH:MM`. Carimbo vermelho é horário normal (saída).
-- Carimbo apagado: olhe com cuidado; se não tiver certeza, marque ⚠ na tabela.
-- `FERIADO` → `"feriado": true`. `DOMINGO` → dia sem marcação.
-- Escrita à mão **não é marcação**: `?` = marcação esquecida; texto ("Festa Junina", "Saída?"), números ("2.17", "0.43") e `C` na coluna HORAS EXTRAS (= sábado compensado) vão para `anotacoes`.
-- Dias que ainda não aconteceram (foto tirada antes do dia 15) ficam em branco: pergunte se espera ou se foram dias normais.
-
-Mostre uma tabela curta (só dias com marcação ou anotação) e confirme ("Leitura confere?"). Corrija o que o usuário apontar.
-
-## 3. Entrada e análise
-Grave `entrada_AAAA-MM.json` (AAAA-MM = competência) e rode `analisar`.
-
+**2. Gravar `CI/entrada_AAAA-MM.json` direto, no formato compacto** (AAAA-MM = competência = mês do dia 15):
 ```json
-{
-  "mes": 7, "ano": 2026,
-  "registros": [
-    {"date": "2026-06-16", "inicio1": "08:06", "fim1": "12:00", "inicio2": "12:55", "fim2": "17:56"},
-    {"date": "2026-07-09", "feriado": true}
-  ],
-  "anotacoes": {"2026-06-24": "Jogo do Brasil", "2026-06-20": "C"},
-  "sabadosCompensados": ["2026-06-20"],
-  "marcacoesInformadas": {"2026-06-29": {"fim2": "18:00"}},
-  "dayChoices": {"2026-06-27": "extra"},
-  "dayMotivos": {"2026-06-24": "Jogo do Brasil"},
-  "linhasExtras": [{"date": "2026-07-10", "texto": "Abonar o dia 10/07/2026 – EMENDA DE FERIADO;"}],
-  "linhasManuais": null,
-  "dataCI": "2026-07-15"
-}
+{"mes": 7, "ano": 2026,
+ "q2": {"16": "08:06 12:00 12:55 17:56", "17": "05:43 - - 17:55", "27": "07:55 11:55"},
+ "q1": {"1": "07:55 12:04 13:02 17:58", "9": "F", "13": "07:54 12:03 13:01"},
+ "notas": {"q2": {"20": "C", "24": "Jogo do Brasil"}, "q1": {"13": "⚠ 13:01 apagado"}}}
+```
+- `q2` = foto da **2.ª quinzena** (dias 16–31, mês anterior); `q1` = **1.ª quinzena** (dias 1–15). O script calcula as datas.
+- Cada dia: horários na ordem das colunas — Manhã entrada, Manhã saída, Tarde entrada, Tarde saída, Extra entrada, Extra saída. Coluna vazia no meio = `-`. `F` = FERIADO. Dia sem marcação (DOMINGO, folga) = não coloque.
+- Carimbo do relógio: os dígitos pequenos/girados antes da hora são o **dia**; pegue só `HH:MM`. Vermelho é horário normal.
+- Escrita à mão **não é marcação**, vai em `notas`: `?`, textos ("Festa Junina", "Saída?"), números ("2.17") e `C` na coluna HORAS EXTRAS (= sábado compensado).
+- Mês/ano: o usuário disse? Use. Senão, ache o mês em que os dias com carimbo DOMINGO caem num domingo.
+
+**3. Rodar `analisar` (uma vez)** e ler o relatório.
+- Se aparecer `SEM CONFIG`, inclua na rodada de perguntas os dados do funcionário (ver "Config") e grave o config antes de gerar.
+
+**4. UMA rodada de perguntas** (ferramenta de perguntas com opções, até 4 perguntas juntas; agrupe). Mostre antes, em poucas linhas, só os dias com `⚠`/notas e o resumo das divergências (copie do relatório, não reescreva tudo). Pergunte, nesta prioridade:
+1. Leitura duvidosa (`⚠`): confirme o horário.
+2. Marcação faltando: horário (padrão: saída 18:00 seg–qui, 17:00 sex; almoço 12:00–13:00) ou "saí mais cedo".
+3. Horas a mais, por semana: Hora Extra / Banco / Compensado (semana de sábado compensado → recomende Compensado) e o motivo (sugira a nota do cartão).
+4. Horas a menos e dia útil sem marcação: Descontar do banco / Ignorar (falta, folga, abono, ponte?).
+Sábados de folga: assuma compensados os que têm `C`; só pergunte se houver folga sem `C`. Se sobrar decisão para depois das 4 perguntas, use o padrão do motor e avise no texto final. **Nunca invente motivo.**
+
+**5. Gravar as respostas na entrada e rodar `gerar`.** Não rode `analisar` de novo. Mostre o texto gerado e o caminho do .docx; pergunte "Aprovar ou ajustar?". Ajuste = editar a entrada e `gerar` de novo.
+
+## Campos de resposta na entrada
+```json
+"sabadosCompensados": ["2026-06-20", "2026-07-04"],
+"marcacoesInformadas": {"2026-06-29": {"fim2": "18:00"}},
+"dayChoices": {"2026-06-27": "extra", "2026-07-10": "ignorar"},
+"dayMotivos": {"2026-06-26": "Festa Junina"},
+"linhasExtras": [{"date": "2026-07-10", "texto": "Abonar o dia 10/07/2026 – EMENDA DE FERIADO;"}],
+"linhasManuais": null,
+"dataCI": "2026-07-15"
 ```
 - `dayChoices`: `extra` | `banco` | `compensado` (horas a mais) · `descontar` | `ignorar` (horas a menos). Sem escolha = padrão do motor.
-- `marcacoesInformadas`: horário esquecido que o usuário informou; entra na conta e gera "Considerar saída às HH:MM no dia ...".
-- `linhasExtras`: linha livre que o motor não gera. `linhasManuais`: lista com o texto final inteiro (só se o usuário quiser reescrever tudo).
-- Motivo sai em MAIÚSCULAS no fim da linha ("– FESTA JUNINA"), como na C.I. real.
+- `marcacoesInformadas` campos: `inicio1` entrada, `fim1` saída almoço, `inicio2` volta, `fim2` saída, `inicio3`/`fim3` extra.
+- `linhasExtras`: linha livre que o motor não gera. `linhasManuais`: texto final inteiro (só se o usuário quiser reescrever).
+- `dataCI`: hoje; C.I. de mês antigo = dia 15 da competência.
 
-## 4. Perguntas (o coração do agente)
-Pergunte de forma objetiva, com opções (botões, se a plataforma tiver), agrupando por assunto. Mostre sempre data, dia da semana e saldo (`+2h12`). **Nunca invente motivo**: só use o que o usuário disser ou a anotação do cartão que ele confirmar.
+## Config
+Procurado em: `--config`, `./ci-config.json`, `config.json` nesta pasta. Formato em `config.exemplo.json`: `funcionario` (nome, funcao, setor, empresa, unidadeNum, numero, unidade, cartao), `jornada` (padrão seg–qui 9h, sex 8h, tolerância 10 min), `cidade`, `modeloDocx` (opcional: .docx próprio com carimbo, relativo ao config). Sem config: pergunte os dados do funcionário, grave `ci-config.json` na pasta de trabalho e diga que, para não perguntar de novo, basta salvar como `config.json` na pasta da skill.
 
-1. **Sábados de folga**: quais foram compensados. Sugira os que têm `C` no cartão.
-2. **Marcação faltando** (`avisos` / `marcacaoFaltando`): qual horário bater. Opções: horário padrão (saída 18:00 seg–qui, 17:00 sex; almoço 12:00–13:00), "Saí mais cedo / não voltei" ou horário exato.
-3. Grave as respostas e **rode `analisar` de novo** (muda saldo e padrão compensado/extra).
-4. **Horas a mais**, por semana: Hora Extra / Banco de Horas / Compensado (dia útil). Semana de sábado compensado → recomende Compensado. Depois o **motivo** (anotações do cartão daquele dia, "Sem motivo" ou outro).
-5. **Almoço não batido**: motivo (a anotação sugere).
-6. **Horas a menos**: Descontar do banco / Ignorar (+ justificativa opcional).
-7. **Dia útil sem nenhuma marcação**: falta → `descontar`; folga/abono/ponte → `ignorar` + `linhasExtras` com a justificativa; feriado esquecido → `"feriado": true`.
-
-## 5. Gerar e entregar
-`dataCI`: hoje; se for C.I. de mês antigo, dia 15 da competência.
-
-Rode `gerar`. Mostre o texto e pergunte se está ok (Aprovar / Editar). Ajuste e gere de novo até aprovar. Entregue o `CI_AAAA-MM.docx` (abrir no Word, imprimir, assinar).
-- Mais de ~14 linhas: a fonte encolhe para caber no quadro; peça para conferir antes de imprimir.
-- Se o config tiver `app`, o `gerar` também cria `Folha_Ponto_<Mês>_<Ano>.json` para importar no app Folha de Ponto (Ações → Importar).
+## Regras que o motor aplica (para explicar ao usuário)
+Período 16 → 15 · seg–qui 9h, sex 8h, sáb/dom/feriado 0h · ±10 min não conta · sábado de folga = "Sábado dd/mm/aaaa compensado;" e, na semana dele, hora a mais de seg–sex vira compensado (não sai na C.I.) · almoço não batido deduz 1h ("Considerar hora de almoço ...") · turno após meia-noite gera "saída extra ... da manhã do dia seguinte" · extra/banco: uma linha por semana com motivo em MAIÚSCULAS · texto acima de ~14 linhas encolhe a fonte (peça para conferir antes de imprimir).

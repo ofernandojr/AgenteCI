@@ -232,6 +232,47 @@ def assuntos_marcados():
     assert ci.assuntos(A) == {'horasExtras': True, 'compensacao': True}
 
 
+# ---------------- entrada compacta (formato que a IA escreve)
+COMPACTA = {
+    'mes': 7, 'ano': 2026,
+    'q2': {'16': '08:06 12:00 12:55 17:56', '17': '05:43 - - 17:55', '18': '07:55 11:56 12:57 17:55',
+           '19': '07:56 11:58 12:55 16:56', '22': '07:56 11:58 12:57 17:56', '23': '08:05 13:45 14:44 17:55',
+           '24': '07:57 - - 17:33', '25': '07:55 11:56 12:56 17:56', '26': '07:55 - - 17:38', '27': '07:55 11:55',
+           '29': '07:56 12:04 13:05', '30': '08:00 12:03 13:01 17:55', '31': '08:00 12:00 13:00 18:00'},
+    'q1': {'1': '07:55 12:04 13:02 17:58', '2': '07:57 12:02 12:56 17:55', '3': '07:54 12:01 13:00 16:58',
+           '6': '07:59 12:01 13:00 17:57', '7': '07:55 12:00 12:58 17:58', '8': '07:55 11:56 12:56 17:56',
+           '9': 'F', '10': '07:55 12:00 13:00 16:55', '13': '07:54 12:03 13:01 17:56', '14': '07:55 12:00 13:00 17:55',
+           '15': '07:55 12:00 13:00 17:55'},
+    'notas': {'q2': {'20': 'C', '24': 'Jogo do Brasil'}, 'q1': {'4': 'C'}},
+}
+
+
+@test
+def compacta_igual_a_registros():
+    a = ci.analisar(COMPACTA, CFG)  # dia 31/06 não existe e é ignorado
+    assert [(d['date'], r2(d['diff']), d['padrao']) for d in a['divergencias']] == \
+           [(d['date'], r2(d['diff']), d['padrao']) for d in A['divergencias']]
+    assert ci.texto_ci(a) == ci.texto_ci(A)
+
+
+@test
+def compacta_datas_feriado_e_notas():
+    e = ci.expandir_cartao({'mes': 1, 'ano': 2027, 'q2': {'20': '8:00 12:00'}, 'q1': {'1': 'F'},
+                            'notas': {'q2': {'20': 'X'}}})
+    regs = {r['date']: r for r in e['registros']}
+    assert regs['2026-12-20']['inicio1'] == '08:00' and regs['2027-01-01']['feriado']
+    assert e['anotacoes'] == {'2026-12-20': 'X'}
+
+
+@test
+def relatorio_resume_leitura_e_divergencias():
+    a = ci.analisar(COMPACTA, CFG)
+    txt = ci.relatorio(a, {}, {'jornada': CFG})
+    assert '24/06 qua  07:57 --:-- --:-- 17:33   nota: Jogo do Brasil' in txt
+    assert '09/07 qui  FERIADO' in txt
+    assert '17/06 qua  +2h12  compensado' in txt and 'AVISOS' in txt
+
+
 # ---------------- .docx
 @test
 def docx_do_modelo_do_repositorio():

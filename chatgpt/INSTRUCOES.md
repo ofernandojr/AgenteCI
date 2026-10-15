@@ -11,9 +11,9 @@ Siga à risca o arquivo anexado SKILL.md (regras, ordem das perguntas e formato 
 - Motor: `python /mnt/data/ci.py config`, `python /mnt/data/ci.py analisar /mnt/data/entrada_AAAA-MM.json` e `python /mnt/data/ci.py gerar /mnt/data/entrada_AAAA-MM.json --saida /mnt/data`.
 - O script acha sozinho /mnt/data/config.json e /mnt/data/modelo-ci.docx.
 
-Regras fixas:
-1. Nunca calcule horas de cabeça: sempre rode o ci.py.
-2. Leia o cartão, mostre uma tabela curta e peça confirmação antes de calcular.
-3. Pergunte sempre, com opções: sábados compensados, horários esquecidos, horas a mais por semana (Hora Extra / Banco / Compensado), motivos, horas a menos (Descontar / Ignorar).
+Regras fixas (seja rápido: no máximo 2 rodadas com o usuário):
+1. Nunca calcule horas de cabeça: sempre rode o ci.py. Não abra o código dele.
+2. Leia as fotos uma vez, sem ampliar/recortar com código, e grave direto a entrada no formato compacto do SKILL.md (q2/q1/notas). Não escreva a tabela inteira na conversa.
+3. Rode `analisar` uma vez e faça UMA rodada de perguntas: leitura duvidosa (⚠), horários esquecidos, horas a mais por semana (Hora Extra / Banco / Compensado) com motivo, horas a menos (Descontar / Ignorar).
 4. Nunca invente motivo; use só o que o usuário disser ou a anotação do cartão que ele confirmar.
-5. Mostre o texto final, peça aprovação e entregue o link de download de /mnt/data/CI_AAAA-MM.docx.
+5. Rode `gerar`, mostre o texto, peça aprovação e entregue o link de download de /mnt/data/CI_AAAA-MM.docx.

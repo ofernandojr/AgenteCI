@@ -128,6 +128,53 @@ def horas_trabalhadas(r):
             'horaSaidaExtra': saida_extra, 'faltando': faltando}
 
 
+# ---------------------------------------------------------------- entrada compacta
+
+def mes_da_quinzena(q, mes, ano):
+    """'q2' (dias 16–31) = mês anterior à competência; 'q1' (dias 1–15) = mês da competência."""
+    if q == 'q1':
+        return mes, ano
+    return (12, ano - 1) if mes == 1 else (mes - 1, ano)
+
+
+def expandir_cartao(entrada):
+    """
+    Formato compacto (menos texto para a IA escrever):
+      "q2": {"16": "08:06 12:00 12:55 17:56", "17": "05:43 - - 17:55", "9": "F"}, "q1": {...}
+      "notas": {"q2": {"20": "C", "24": "Jogo do Brasil"}, "q1": {...}}
+    Horários na ordem: entrada, saída almoço, volta, saída, entrada extra, saída extra.
+    "-" ou "?" = vazio · "F" = feriado. Vira entrada["registros"] e entrada["anotacoes"] (datas ISO).
+    """
+    mes, ano = int(entrada['mes']), int(entrada['ano'])
+    regs = {}
+    anot = dict(entrada.get('anotacoes') or {})
+    for q in ('q2', 'q1'):
+        m, a = mes_da_quinzena(q, mes, ano)
+        for dia, linha in (entrada.get(q) or {}).items():
+            try:
+                iso = dt.date(a, m, int(dia)).isoformat()
+            except ValueError:
+                continue  # ex.: dia 31 em mês de 30 dias
+            r = {'date': iso}
+            tokens = str(linha).split()
+            if tokens and tokens[0].upper() in ('F', 'FERIADO'):
+                r['feriado'] = True
+            else:
+                for campo, tok in zip(CAMPOS, tokens):
+                    if re.fullmatch(r'\d{1,2}:\d{2}', tok):
+                        h, mi = tok.split(':')
+                        r[campo] = f'{int(h):02d}:{mi}'
+            regs[iso] = r
+        for dia, nota in ((entrada.get('notas') or {}).get(q) or {}).items():
+            try:
+                anot[dt.date(a, m, int(dia)).isoformat()] = nota
+            except ValueError:
+                pass
+    for r in entrada.get('registros') or []:  # registros explícitos têm prioridade
+        regs[r['date']] = {**regs.get(r['date'], {}), **r}
+    return {**entrada, 'registros': sorted(regs.values(), key=lambda r: r['date']), 'anotacoes': anot}
+
+
 # ---------------------------------------------------------------- análise
 
 def analisar(entrada, cfg):
@@ -135,6 +182,7 @@ def analisar(entrada, cfg):
     entrada = {mes, ano, registros:[{date, inicio1..fim3, feriado}], sabadosCompensados?, marcacoesInformadas?}
     cfg = {segqui, sex, sab, dom, tol (minutos)}
     """
+    entrada = expandir_cartao(entrada)
     regs = {r['date']: dict(r) for r in entrada.get('registros', [])}
     informadas = entrada.get('marcacoesInformadas') or {}
     for iso, campos in informadas.items():
@@ -193,7 +241,8 @@ def analisar(entrada, cfg):
         })
 
     return {'datas': datas, 'dias': dias, 'divergencias': divergencias, 'sabados': sabados,
-            'sabadosCompensados': sorted(compensados), 'avisos': avisos}
+            'sabadosCompensados': sorted(compensados), 'avisos': avisos,
+            'registros': regs, 'anotacoes': entrada.get('anotacoes') or {}}
 
 
 # ---------------------------------------------------------------- texto da C.I.
@@ -490,11 +539,48 @@ def hm(h):
     return f'{"-" if h < 0 else "+"}{m // 60}h{m % 60:02d}'
 
 
+def relatorio(a, choices, cfg):
+    """Texto curto para a IA mostrar/copiar: leitura, sábados, divergências e avisos."""
+    sem = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+    d0, d1 = a['datas'][0], a['datas'][-1]
+    out = [f'Período {data_br(d0)} a {data_br(d1)}', '', 'LEITURA (entrada | almoço | volta | saída | extra)']
+    for iso in a['datas']:
+        r, nota = a['registros'].get(iso, {}), a['anotacoes'].get(iso)
+        marcas = [r.get(c) or '--:--' for c in CAMPOS]
+        if not any(r.get(c) for c in CAMPOS) and not r.get('feriado') and not nota:
+            continue
+        horas = 'FERIADO' if r.get('feriado') else ' '.join(marcas[:4]) + (f' | {marcas[4]}-{marcas[5]}' if r.get('inicio3') or r.get('fim3') else '')
+        out.append(f'{iso[8:10]}/{iso[5:7]} {sem[dia_da_semana(iso)]}  {horas}' + (f'   nota: {nota}' if nota else ''))
+    sab = []
+    for s in a['sabados']:
+        estado = 'trabalhado' if s['trabalhado'] else 'feriado' if s['feriado'] else \
+            'folga → compensado' if s['date'] in a['sabadosCompensados'] else 'folga (não compensado)'
+        sab.append(f'{data_br(s["date"])[:5]} {estado}')
+    out += ['', 'SÁBADOS: ' + ' · '.join(sab), '', 'DIVERGÊNCIAS (saldo · escolha atual · padrão)']
+    if not a['divergencias']:
+        out.append('nenhuma')
+    for d in a['divergencias']:
+        sinais = [t for t, ok in (('almoço não batido', d['missingLunch']), ('marcação faltando', d['marcacaoFaltando']),
+                                  (f'sai {d["horaSaidaExtra"]} do dia seguinte', d['cruzaMeiaNoite']),
+                                  ('semana de sábado compensado', d['compensavel'])) if ok]
+        out.append(f'{data_br(d["date"])[:5]} {sem[dia_da_semana(d["date"])]}  {hm(d["diff"])}  '
+                   f'{choices.get(d["date"]) or d["padrao"]} (padrão {d["padrao"]})  sem {d["semana"]}'
+                   + (f'  [{"; ".join(sinais)}]' if sinais else ''))
+    if a['avisos']:
+        out += ['', 'AVISOS'] + [x['texto'] for x in a['avisos']]
+    if not cfg:
+        out += ['', 'SEM CONFIG: usando jornada padrão (seg–qui 9h, sex 8h, tolerância 10 min). Peça os dados do funcionário antes de gerar.']
+    return '\n'.join(out)
+
+
 def cmd_analisar(args):
     cfg = achar_config(args.config)
     entrada = ler_json(args.entrada)
     a = analisar(entrada, jornada(cfg))
     choices = entrada.get('dayChoices') or {}
+    if not args.json:
+        print(relatorio(a, choices, cfg))
+        return
     saida = {
         'periodo': f'{a["datas"][0]} a {a["datas"][-1]}',
         'sabados': a['sabados'],
@@ -541,7 +627,7 @@ def cmd_gerar(args):
     cfg = achar_config(args.config)
     if not cfg:
         raise SystemExit('Nenhum config achado. Crie ci-config.json (modelo: config.exemplo.json) com os dados do funcionário.')
-    entrada = ler_json(args.entrada)
+    entrada = expandir_cartao(ler_json(args.entrada))
     a = analisar(entrada, jornada(cfg))
     linhas = entrada.get('linhasManuais') or [l['texto'] for l in linhas_ci(a, entrada)]
     texto = '\n'.join([CABECALHO] + linhas)
@@ -591,6 +677,8 @@ def main(argv=None):
         s.add_argument('--config')
         if nome == 'gerar':
             s.add_argument('--saida', help='pasta de saída (padrão: ./CI)')
+        else:
+            s.add_argument('--json', action='store_true', help='saída em JSON em vez do relatório')
     s = sub.add_parser('config')
     s.add_argument('--config')
     args = p.parse_args(argv)
